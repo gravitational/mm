@@ -10,6 +10,7 @@ import (
 	v1 "k8s.io/client-go/1.4/pkg/api/v1"
 	"k8s.io/client-go/1.4/pkg/labels"
 	serializer "k8s.io/client-go/1.4/pkg/runtime/serializer"
+	watch "k8s.io/client-go/1.4/pkg/watch"
 	"k8s.io/client-go/1.4/rest"
 )
 
@@ -56,19 +57,45 @@ func NewServiceLocator(config ServiceLocatorConfig) (*ServiceLocator, error) {
 	return &ServiceLocator{ServiceLocatorConfig: config, client: clt}, nil
 }
 
-func (l *ServiceLocator) List(namespace string, labelsSet map[string]string) (*v1.ServiceList, error) {
+func (l *ServiceLocator) Watch(namespace string, labelsSet map[string]string) (watch.Interface, error) {
 	set := make(labels.Set)
 	for key, val := range labelsSet {
 		set[key] = val
 	}
 
-	services, err := l.Client.Core().Services(constants.Namespace(namespace)).List(
-		api.ListOptions{
-			LabelSelector: set.AsSelector(),
-		})
+	watcher, err := l.Client.Core().Services(constants.Namespace(namespace)).Watch(api.ListOptions{LabelSelector: set.AsSelector()})
 	if err != nil {
 		return nil, convertErr(err)
 	}
 
-	return services, nil
+	return watcher, nil
+}
+
+func WatchForService(kubeconfig, namespace string, labelSelector map[string]string) (<-chan *v1.Service, error) {
+	client, config, err := GetClient(kubeconfig)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	l, err := NewServiceLocator(ServiceLocatorConfig{Client: client, Config: config})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	watcher, err := l.Watch(namespace, labelSelector)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	serviceCh := make(chan *v1.Service)
+	go func() {
+		for event := range watcher.ResultChan() {
+			if event.Type != watch.Added && event.Type != watch.Modified {
+				continue
+			}
+			serviceCh <- event.Object.(*v1.Service)
+		}
+	}()
+
+	return serviceCh, nil
 }
