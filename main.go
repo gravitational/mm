@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
 	log "github.com/Sirupsen/logrus"
+	v1 "k8s.io/client-go/1.4/pkg/api/v1"
 
 	"github.com/gravitational/kingpin"
 	"github.com/gravitational/trace"
@@ -16,6 +16,8 @@ import (
 	"github.com/gravitational/mm/pkg/constants"
 	"github.com/gravitational/mm/pkg/kubernetes"
 	"github.com/gravitational/mm/pkg/util"
+	"github.com/prometheus/common/expfmt"
+	watch "k8s.io/client-go/1.4/pkg/watch"
 )
 
 func main() {
@@ -28,34 +30,58 @@ func main() {
 	}
 }
 
-func argParse() *constants.CommandLineFlags {
+func argParse() constants.CommandLineFlags {
 	cfg := constants.NewCommandLineFlags()
 	kingpin.Flag(constants.FlagLogLevel, "Log level.").Default("info").Envar(constants.EnvLogLevel).EnumVar(&cfg.LogLevel, "debug", "info", "warning", "error", "fatal", "panic")
 	kingpin.Flag(constants.FlagKubeConfig, "Path to kubeconfig.").Default(filepath.Join(os.Getenv("HOME"), ".kube", "config")).Envar(constants.EnvKubeConfig).StringVar(&cfg.KubeConfig)
-	kingpin.Flag(constants.FlagNamespace, "Namespace.").Default(constants.DefaultNamespace).Envar(constants.EnvNamespace).StringVar(&cfg.Namespace)
-	kingpin.Flag(constants.FlagLabelSelector, "Label selector for services.").PlaceHolder("KEY:VALUE").StringMapVar(&cfg.LabelSelector)
+	kingpin.Flag(constants.FlagMetricsServicesNamespace, "Kubernetes namespace for metrics services.").Default(constants.DefaultNamespace).Envar(constants.EnvMetricsServicesNamespace).StringVar(&cfg.MetricsServicesNamespace)
+	kingpin.Flag(constants.FlagMetricsServicesLabelSelector, "Kubernetes label selector for metrics services.").PlaceHolder("KEY:VALUE").StringMapVar(&cfg.MetricsServicesLabelSelector)
+	kingpin.Flag(constants.FlagInfluxDBServiceNamespace, "Kubernetes namespace for InfluxDB.").Default(constants.DefaultNamespace).Envar(constants.EnvInfluxDBServiceNamespace).StringVar(&cfg.InfluxDBServiceNamespace)
+	kingpin.Flag(constants.FlagInfluxDBServiceName, "Kubernetes service name for InfluxDB.").Default(constants.DefaultInfluxDBServiceName).Envar(constants.EnvInfluxDBServiceName).StringVar(&cfg.InfluxDBServiceName)
 	kingpin.Parse()
 	return cfg
 }
 
-func run(cfg *constants.CommandLineFlags) error {
+func run(cfg constants.CommandLineFlags) error {
 	log.Infof("Starting with config %+v", cfg)
 
-	serviceCh, err := kubernetes.WatchForService(cfg.KubeConfig, cfg.Namespace, cfg.LabelSelector)
+	client, config, err := kubernetes.GetClient(cfg.KubeConfig)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	for service := range serviceCh {
+
+	op, err := kubernetes.NewOperator(kubernetes.OperatorConfig{Client: client, Config: config})
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	nodeAddress, err := op.GetNodeInternalIP()
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	watcher, err := op.WatchServices(cfg.MetricsServicesNamespace, cfg.MetricsServicesLabelSelector)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	for event := range watcher.ResultChan() {
+		if event.Type != watch.Added && event.Type != watch.Modified {
+			continue
+		}
+		service := event.Object.(*v1.Service)
 		for _, port := range service.Spec.Ports {
-			resp, err := util.DoHTTPRequest("GET", fmt.Sprintf("http://192.168.99.100:%v/metrics", port.Port), nil)
+			resp, err := util.DoHTTPRequest("GET", fmt.Sprintf("http://%s:%v/metrics", nodeAddress, port.Port), nil)
 			if err != nil {
 				return trace.Wrap(err)
 			}
-			out, err := ioutil.ReadAll(resp.Body)
+			parser := &expfmt.TextParser{}
+			metrics, err := parser.TextToMetricFamilies(resp.Body)
 			if err != nil {
 				return trace.Wrap(err)
 			}
-			fmt.Println(string(out))
+			for _, mf := range metrics {
+				fmt.Println(mf.GetMetric())
+			}
 		}
 	}
 
