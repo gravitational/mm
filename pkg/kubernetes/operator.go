@@ -64,7 +64,6 @@ func (op *Operator) ListNodes(labelsMap map[string]string) (*v1.NodeList, error)
 	if err != nil {
 		return nil, convertErr(err)
 	}
-
 	return nodes, nil
 }
 
@@ -94,8 +93,15 @@ func (l *Operator) WatchServices(namespace string, labelsMap map[string]string) 
 	if err != nil {
 		return nil, convertErr(err)
 	}
-
 	return watcher, nil
+}
+
+func (l *Operator) GetService(namespace string, name string) (*v1.Service, error) {
+	svc, err := l.Client.Core().Services(constants.Namespace(namespace)).Get(name)
+	if err != nil {
+		return nil, convertErr(err)
+	}
+	return svc, nil
 }
 
 func GetLabelSelector(labelsMap map[string]string) labels.Selector {
@@ -103,6 +109,5 @@ func GetLabelSelector(labelsMap map[string]string) labels.Selector {
 	for key, val := range labelsMap {
 		set[key] = val
 	}
-
 	return set.AsSelector()
 }

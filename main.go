@@ -1,7 +1,11 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -14,9 +18,11 @@ import (
 	"github.com/gravitational/trace"
 
 	"github.com/gravitational/mm/pkg/constants"
+	"github.com/gravitational/mm/pkg/influxdb"
 	"github.com/gravitational/mm/pkg/kubernetes"
+	"github.com/gravitational/mm/pkg/prometheus"
 	"github.com/gravitational/mm/pkg/util"
-	"github.com/prometheus/common/expfmt"
+	influx "github.com/influxdata/influxdb/client"
 	watch "k8s.io/client-go/1.4/pkg/watch"
 )
 
@@ -60,6 +66,19 @@ func run(cfg constants.CommandLineFlags) error {
 		return trace.Wrap(err)
 	}
 
+	influxService, err := op.GetService(cfg.InfluxDBServiceNamespace, cfg.InfluxDBServiceName)
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	u, err := url.Parse(fmt.Sprintf("http://%s:%v", nodeAddress, influxService.Spec.Ports[0].Port))
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	influxClient, err := influxdb.NewClient(influx.Config{URL: *u}, "mydb", "")
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
 	watcher, err := op.WatchServices(cfg.MetricsServicesNamespace, cfg.MetricsServicesLabelSelector)
 	if err != nil {
 		return trace.Wrap(err)
@@ -68,20 +87,37 @@ func run(cfg constants.CommandLineFlags) error {
 		if event.Type != watch.Added && event.Type != watch.Modified {
 			continue
 		}
+
 		service := event.Object.(*v1.Service)
-		for _, port := range service.Spec.Ports {
-			resp, err := util.DoHTTPRequest("GET", fmt.Sprintf("http://%s:%v/metrics", nodeAddress, port.Port), nil)
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			parser := &expfmt.TextParser{}
-			metrics, err := parser.TextToMetricFamilies(resp.Body)
-			if err != nil {
-				return trace.Wrap(err)
-			}
-			for _, mf := range metrics {
-				fmt.Println(mf.GetMetric())
-			}
+		if len(service.Spec.Ports) == 0 {
+			return errors.New("sadffsa")
+		}
+
+		port := service.Spec.Ports[0]
+		metricsURL := fmt.Sprintf("http://%s:%v/metrics", nodeAddress, port.Port)
+		resp, err := util.DoHTTPRequest("GET", metricsURL, nil)
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return trace.Wrap(fmt.Errorf("%s returned HTTP status %s", metricsURL, resp.Status))
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("error reading body: %s", err)
+		}
+
+		metrics, err := prometheus.Parse(body, resp.Header)
+		if err != nil {
+			return fmt.Errorf("error reading metrics for %s: %s", metricsURL, err)
+		}
+
+		err = influxClient.Send(metrics)
+		if err != nil {
+			return trace.Wrap(err)
 		}
 	}
 
@@ -90,7 +126,8 @@ func run(cfg constants.CommandLineFlags) error {
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		s := <-signalChan
-		log.Println(fmt.Sprintf("Captured %v. Exiting...", s))
+		log.Infof(fmt.Sprintf("Captured %v. Exiting...", s))
+		watcher.Stop()
 
 		switch s {
 		case syscall.SIGINT:
