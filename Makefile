@@ -42,10 +42,6 @@ docker-clean:
 	-docker rmi -f $(docker images $(APPLICATION) -q)
 
 # Dev
-.PHONY: start
-start: install
-	goreman start
-
 .PHONY: format
 format:
 	goimports -w .
@@ -94,7 +90,6 @@ std-info:
 
 PACKAGES := \
 	golang.org/x/tools/cmd/goimports \
-	github.com/mattn/goreman \
 	github.com/Masterminds/glide \
 	github.com/alecthomas/gometalinter \
 	github.com/divan/depscheck
