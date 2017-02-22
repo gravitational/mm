@@ -1,13 +1,12 @@
 package constants
 
-const DefaultInfluxDBServiceName = "influxdb"
-
 const (
 	EnvLogLevel                 = "MM_LOG_LEVEL"
 	EnvKubeConfig               = "MM_KUBE_CONFIG"
 	EnvMetricsServicesNamespace = "MM_METRICS_SERVICES_NAMESPACE"
 	EnvInfluxDBServiceNamespace = "MM_INFLUXDB_SERVICE_NAMESPACE"
 	EnvInfluxDBServiceName      = "MM_INFLUXDB_SERVICE_NAME"
+	EnvInfluxDBDatabaseName     = "MM_INFLUXDB_DATABASE_NAME"
 )
 
 const (
@@ -17,6 +16,7 @@ const (
 	FlagMetricsServicesLabelSelector = "metrics-services-label-selector"
 	FlagInfluxDBServiceNamespace     = "influxdb-service-namespace"
 	FlagInfluxDBServiceName          = "influxdb-service-name"
+	FlagInfluxDBDatabaseName         = "influxdb-database-name"
 )
 
 type CommandLineFlags struct {
@@ -26,6 +26,7 @@ type CommandLineFlags struct {
 	MetricsServicesLabelSelector map[string]string
 	InfluxDBServiceNamespace     string
 	InfluxDBServiceName          string
+	InfluxDBDatabaseName         string
 }
 
 func NewCommandLineFlags() CommandLineFlags {

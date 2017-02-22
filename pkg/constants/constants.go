@@ -1,9 +1,11 @@
 package constants
 
 const (
-	ChangesetGroup   = "changeset.gravitational.io"
-	ChangesetVersion = "v1"
-	DefaultNamespace = "default"
+	ChangesetGroup             = "changeset.gravitational.io"
+	ChangesetVersion           = "v1"
+	DefaultNamespace           = "default"
+	DefaultInfluxDBServiceName = "influxdb"
+	DefaultInfluxDBAPIPort     = 8086
 )
 
 // Namespace returns a default namespace if the specified namespace is empty

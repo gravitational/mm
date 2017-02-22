@@ -1,8 +1,6 @@
 package kubernetes
 
 import (
-	"errors"
-
 	"github.com/gravitational/trace"
 
 	"github.com/gravitational/mm/pkg/constants"
@@ -67,41 +65,60 @@ func (op *Operator) ListNodes(labelsMap map[string]string) (*v1.NodeList, error)
 	return nodes, nil
 }
 
-func (op *Operator) GetNodeInternalIP() (string, error) {
-	nodes, err := op.ListNodes(nil)
-	if err != nil {
-		return "", trace.Wrap(err)
-	}
-	if len(nodes.Items) == 0 {
-		return "", errors.New("no nodes were found")
-	}
-
-	var nodeAddress string
-	for _, address := range nodes.Items[0].Status.Addresses {
-		if address.Type == v1.NodeInternalIP {
-			nodeAddress = address.Address
+func (op *Operator) GetNodeIP(name string) (string, error) {
+	var node *v1.Node
+	var err error
+	if name == "" {
+		nodes, err := op.ListNodes(nil)
+		if err != nil {
+			return "", trace.Wrap(err)
+		}
+		if len(nodes.Items) == 0 {
+			return "", trace.Errorf("no nodes were found")
+		}
+		node = &nodes.Items[0]
+	} else {
+		node, err = op.GetNode(name)
+		if err != nil {
+			return "", trace.Wrap(err)
 		}
 	}
-	if nodeAddress == "" {
-		return "", errors.New("can't find NodeInternalIP")
+
+	var nodeIP string
+	for _, address := range node.Status.Addresses {
+		if address.Type == v1.NodeInternalIP {
+			nodeIP = address.Address
+			break
+		}
 	}
-	return nodeAddress, nil
+	if nodeIP == "" {
+		return "", trace.Errorf("NodeInternalIP can't be empty")
+	}
+	return nodeIP, nil
 }
 
-func (l *Operator) WatchServices(namespace string, labelsMap map[string]string) (watch.Interface, error) {
-	watcher, err := l.Client.Core().Services(constants.Namespace(namespace)).Watch(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
+func (op *Operator) WatchServices(namespace string, labelsMap map[string]string) (watch.Interface, error) {
+	watcher, err := op.Client.Core().Services(constants.Namespace(namespace)).Watch(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
 	if err != nil {
 		return nil, convertErr(err)
 	}
 	return watcher, nil
 }
 
-func (l *Operator) GetService(namespace string, name string) (*v1.Service, error) {
-	svc, err := l.Client.Core().Services(constants.Namespace(namespace)).Get(name)
+func (op *Operator) GetService(namespace string, name string) (*v1.Service, error) {
+	svc, err := op.Client.Core().Services(constants.Namespace(namespace)).Get(name)
 	if err != nil {
 		return nil, convertErr(err)
 	}
 	return svc, nil
+}
+
+func (op *Operator) GetNode(name string) (*v1.Node, error) {
+	n, err := op.Client.Core().Nodes().Get(name)
+	if err != nil {
+		return nil, convertErr(err)
+	}
+	return n, nil
 }
 
 func GetLabelSelector(labelsMap map[string]string) labels.Selector {
@@ -110,4 +127,13 @@ func GetLabelSelector(labelsMap map[string]string) labels.Selector {
 		set[key] = val
 	}
 	return set.AsSelector()
+}
+
+func ExtractServiceNodePort(svc *v1.Service, port int32) (int32, error) {
+	for _, p := range svc.Spec.Ports {
+		if p.NodePort > 0 && p.Port == port {
+			return p.NodePort, nil
+		}
+	}
+	return 0, trace.Errorf("missing nodeport for port %v", port)
 }

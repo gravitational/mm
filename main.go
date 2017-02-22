@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -44,6 +43,7 @@ func argParse() constants.CommandLineFlags {
 	kingpin.Flag(constants.FlagMetricsServicesLabelSelector, "Kubernetes label selector for metrics services.").PlaceHolder("KEY:VALUE").StringMapVar(&cfg.MetricsServicesLabelSelector)
 	kingpin.Flag(constants.FlagInfluxDBServiceNamespace, "Kubernetes namespace for InfluxDB.").Default(constants.DefaultNamespace).Envar(constants.EnvInfluxDBServiceNamespace).StringVar(&cfg.InfluxDBServiceNamespace)
 	kingpin.Flag(constants.FlagInfluxDBServiceName, "Kubernetes service name for InfluxDB.").Default(constants.DefaultInfluxDBServiceName).Envar(constants.EnvInfluxDBServiceName).StringVar(&cfg.InfluxDBServiceName)
+	kingpin.Flag(constants.FlagInfluxDBDatabaseName, "InfluxDB database name.").Envar(constants.EnvInfluxDBDatabaseName).StringVar(&cfg.InfluxDBDatabaseName)
 	kingpin.Parse()
 	return cfg
 }
@@ -61,20 +61,27 @@ func run(cfg constants.CommandLineFlags) error {
 		return trace.Wrap(err)
 	}
 
-	nodeAddress, err := op.GetNodeInternalIP()
+	nodeIP, err := op.GetNodeIP("")
 	if err != nil {
 		return trace.Wrap(err)
 	}
 
-	influxService, err := op.GetService(cfg.InfluxDBServiceNamespace, cfg.InfluxDBServiceName)
+	influxDBService, err := op.GetService(cfg.InfluxDBServiceNamespace, cfg.InfluxDBServiceName)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	u, err := url.Parse(fmt.Sprintf("http://%s:%v", nodeAddress, influxService.Spec.Ports[0].Port))
+
+	influxDBAPIPort, err := kubernetes.ExtractServiceNodePort(influxDBService, constants.DefaultInfluxDBAPIPort)
 	if err != nil {
 		return trace.Wrap(err)
 	}
-	influxClient, err := influxdb.NewClient(influx.Config{URL: *u}, "mydb", "")
+
+	u, err := url.Parse(fmt.Sprintf("http://%s:%v", nodeIP, influxDBAPIPort))
+	if err != nil {
+		return trace.Wrap(err)
+	}
+
+	influxClient, err := influxdb.NewClient(influx.Config{URL: *u}, cfg.InfluxDBDatabaseName, "")
 	if err != nil {
 		return trace.Wrap(err)
 	}
@@ -89,12 +96,7 @@ func run(cfg constants.CommandLineFlags) error {
 		}
 
 		service := event.Object.(*v1.Service)
-		if len(service.Spec.Ports) == 0 {
-			return errors.New("sadffsa")
-		}
-
-		port := service.Spec.Ports[0]
-		metricsURL := fmt.Sprintf("http://%s:%v/metrics", nodeAddress, port.Port)
+		metricsURL := fmt.Sprintf("http://%s:%v/metrics", nodeIP, service.Spec.Ports[0].Port)
 		resp, err := util.DoHTTPRequest("GET", metricsURL, nil)
 		if err != nil {
 			return trace.Wrap(err)
@@ -102,22 +104,22 @@ func run(cfg constants.CommandLineFlags) error {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return trace.Wrap(fmt.Errorf("%s returned HTTP status %s", metricsURL, resp.Status))
+			return trace.Errorf("%s returned HTTP status %s", metricsURL, resp.Status)
 		}
 
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("error reading body: %s", err)
+			return trace.Wrap(err, "error reading body")
 		}
 
 		metrics, err := prometheus.Parse(body, resp.Header)
 		if err != nil {
-			return fmt.Errorf("error reading metrics for %s: %s", metricsURL, err)
+			return trace.Wrap(err, "error reading metrics for %s", metricsURL)
 		}
 
 		err = influxClient.Send(metrics)
 		if err != nil {
-			return trace.Wrap(err)
+			return trace.Wrap(err, "error sending metrics")
 		}
 	}
 

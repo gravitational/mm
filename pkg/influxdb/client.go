@@ -1,6 +1,9 @@
 package influxdb
 
-import influx "github.com/influxdata/influxdb/client"
+import (
+	"github.com/gravitational/trace"
+	influx "github.com/influxdata/influxdb/client"
+)
 
 type Client struct {
 	client          *influx.Client
@@ -11,7 +14,7 @@ type Client struct {
 func NewClient(cfg influx.Config, db string, rp string) (*Client, error) {
 	c, err := influx.NewClient(cfg)
 	if err != nil {
-		return nil, err
+		return nil, trace.Wrap(err)
 	}
 	return &Client{
 		client:          c,
@@ -27,5 +30,8 @@ func (c *Client) Send(points []influx.Point) error {
 		RetentionPolicy: c.retentionPolicy,
 	}
 	_, err := c.client.Write(bps)
-	return err
+	if err != nil {
+		return trace.Wrap(err)
+	}
+	return nil
 }
