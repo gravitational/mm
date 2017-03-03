@@ -21,12 +21,17 @@ $ minikube start
 $ minikube addons enable heapster
 # expose InfluxDB service
 $ kubectl expose service monitoring-influxdb --namespace=kube-system --type=NodePort --name influxdb
-# check that you have URL's and then go and create DB for metrics
+# check that you have 2 URL's
+# then open first URL, connect to DB using port from second URL and then create a new database
 $ minikube service influxdb --url --namespace kube-system
 # deploy prometheus node exporter from https://github.com/coreos/kube-prometheus/tree/master/manifests/exporters
 $ kubectl create -f node-exporter-svc.yaml -f node-exporter-ds.yaml
+# test that it works
+$ curl $(minikube ip):9100/metrics
+# compile program
+$ make install
 # grab metrics and push them into InfluxDB
-$ make install && mm --metrics-services-label-selector=app:node-exporter --influxdb-service-namespace=kube-system --influxdb-service-name=influxdb --influxdb-database-name=<database-name>
+$ mm --metrics-services-label-selector=app:node-exporter --influxdb-service-namespace=kube-system --influxdb-service-name=influxdb --influxdb-database-name=<database-name>
 ```
 
 For more complicated example with several metrics endpoints you may add common label to them like `metrics=true`.

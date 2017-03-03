@@ -48,7 +48,7 @@ func NewOperator(config OperatorConfig) (*Operator, error) {
 	}
 
 	cfg.NegotiatedSerializer = serializer.DirectCodecFactory{CodecFactory: api.Codecs}
-	cfg.GroupVersion = &unversioned.GroupVersion{Group: constants.ChangesetGroup, Version: constants.ChangesetVersion}
+	cfg.GroupVersion = &unversioned.GroupVersion{Group: constants.MetricsGroup, Version: constants.MetricsVersion}
 	clt, err := rest.RESTClientFor(&cfg)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -58,31 +58,23 @@ func NewOperator(config OperatorConfig) (*Operator, error) {
 }
 
 func (op *Operator) ListNodes(labelsMap map[string]string) (*v1.NodeList, error) {
-	nodes, err := op.Client.Core().Nodes().List(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
+	nodes, err := op.Client.Core().Nodes().
+		List(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
 	if err != nil {
 		return nil, convertErr(err)
 	}
 	return nodes, nil
 }
 
-func (op *Operator) GetNodeIP(name string) (string, error) {
-	var node *v1.Node
-	var err error
-	if name == "" {
-		nodes, err := op.ListNodes(nil)
-		if err != nil {
-			return "", trace.Wrap(err)
-		}
-		if len(nodes.Items) == 0 {
-			return "", trace.Errorf("no nodes were found")
-		}
-		node = &nodes.Items[0]
-	} else {
-		node, err = op.GetNode(name)
-		if err != nil {
-			return "", trace.Wrap(err)
-		}
+func (op *Operator) GetNodeIP() (string, error) {
+	nodes, err := op.ListNodes(nil)
+	if err != nil {
+		return "", trace.Wrap(err)
 	}
+	if len(nodes.Items) == 0 {
+		return "", trace.Errorf("no nodes were found")
+	}
+	node := &nodes.Items[0]
 
 	var nodeIP string
 	for _, address := range node.Status.Addresses {
@@ -92,13 +84,14 @@ func (op *Operator) GetNodeIP(name string) (string, error) {
 		}
 	}
 	if nodeIP == "" {
-		return "", trace.Errorf("NodeInternalIP can't be empty")
+		return "", trace.Errorf("NodeInternalIP is empty for node %v", node.Name)
 	}
 	return nodeIP, nil
 }
 
 func (op *Operator) WatchServices(namespace string, labelsMap map[string]string) (watch.Interface, error) {
-	watcher, err := op.Client.Core().Services(constants.Namespace(namespace)).Watch(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
+	watcher, err := op.Client.Core().Services(constants.Namespace(namespace)).
+		Watch(api.ListOptions{LabelSelector: GetLabelSelector(labelsMap)})
 	if err != nil {
 		return nil, convertErr(err)
 	}
@@ -135,5 +128,5 @@ func ExtractServiceNodePort(svc *v1.Service, port int32) (int32, error) {
 			return p.NodePort, nil
 		}
 	}
-	return 0, trace.Errorf("missing nodeport for port %v", port)
+	return 0, trace.Errorf("missing NodePort for port %v", port)
 }

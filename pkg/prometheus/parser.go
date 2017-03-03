@@ -1,8 +1,5 @@
 package prometheus
 
-// Parser inspired from
-// https://github.com/prometheus/prom2json/blob/master/main.go
-
 import (
 	"bufio"
 	"bytes"
@@ -75,7 +72,7 @@ func Parse(buf []byte, header http.Header) ([]influx.Point, error) {
 				// standard metric
 				fields = getNameAndValue(m)
 			}
-			// converting to telegraf metric
+			// converting to influx metric
 			if len(fields) > 0 {
 				var t time.Time
 				if m.TimestampMs != nil && *m.TimestampMs > 0 {
@@ -107,7 +104,7 @@ func makeQuantiles(m *dto.Metric) map[string]interface{} {
 	return fields
 }
 
-// Get Buckets  from histogram metric
+// Get Buckets from histogram metric
 func makeBuckets(m *dto.Metric) map[string]interface{} {
 	fields := make(map[string]interface{})
 	for _, b := range m.GetHistogram().Bucket {

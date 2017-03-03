@@ -2,17 +2,17 @@ package influxdb
 
 import (
 	"github.com/gravitational/trace"
-	influx "github.com/influxdata/influxdb/client"
+	"github.com/influxdata/influxdb/client"
 )
 
 type Client struct {
-	client          *influx.Client
+	client          *client.Client
 	database        string
 	retentionPolicy string
 }
 
-func NewClient(cfg influx.Config, db string, rp string) (*Client, error) {
-	c, err := influx.NewClient(cfg)
+func NewClient(cfg client.Config, db string, rp string) (*Client, error) {
+	c, err := client.NewClient(cfg)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
@@ -23,15 +23,15 @@ func NewClient(cfg influx.Config, db string, rp string) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Send(points []influx.Point) error {
-	bps := influx.BatchPoints{
+func (c *Client) Send(points []client.Point) (*client.Response, error) {
+	bps := client.BatchPoints{
 		Points:          points,
 		Database:        c.database,
 		RetentionPolicy: c.retentionPolicy,
 	}
-	_, err := c.client.Write(bps)
+	resp, err := c.client.Write(bps)
 	if err != nil {
-		return trace.Wrap(err)
+		return nil, trace.Wrap(err)
 	}
-	return nil
+	return resp, nil
 }

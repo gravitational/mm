@@ -1,8 +1,8 @@
 package constants
 
 const (
-	ChangesetGroup             = "changeset.gravitational.io"
-	ChangesetVersion           = "v1"
+	MetricsGroup               = "metrics"
+	MetricsVersion             = "v1"
 	DefaultNamespace           = "default"
 	DefaultInfluxDBServiceName = "influxdb"
 	DefaultInfluxDBAPIPort     = 8086
