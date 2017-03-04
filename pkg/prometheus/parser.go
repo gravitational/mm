@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	influx "github.com/influxdata/influxdb/client"
+	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -18,8 +18,8 @@ import (
 
 // Parse returns a slice of Metrics from a text representation of a
 // metrics
-func Parse(buf []byte, header http.Header) ([]influx.Point, error) {
-	var points []influx.Point
+func Parse(buf []byte, header http.Header) ([]*influx.Point, error) {
+	var points []*influx.Point
 	var parser expfmt.TextParser
 	// parse even if the buffer begins with a newline
 	buf = bytes.TrimPrefix(buf, []byte("\n"))
@@ -80,12 +80,11 @@ func Parse(buf []byte, header http.Header) ([]influx.Point, error) {
 				} else {
 					t = time.Now()
 				}
-				points = append(points, influx.Point{
-					Measurement: metricName,
-					Fields:      fields,
-					Tags:        tags,
-					Time:        t,
-				})
+				pt, err := influx.NewPoint(metricName, tags, fields, t)
+				if err != nil {
+					return nil, fmt.Errorf("failed making point from metric: %s", err)
+				}
+				points = append(points, pt)
 			}
 		}
 	}
