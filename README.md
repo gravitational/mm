@@ -25,7 +25,7 @@ $ kubectl expose service monitoring-influxdb --namespace=kube-system --type=Node
 # then open first URL, connect to DB using port from second URL and then create a new database
 $ minikube service influxdb --url --namespace kube-system
 # deploy prometheus node exporter from https://github.com/coreos/kube-prometheus/tree/master/manifests/exporters
-$ kubectl create -f node-exporter-svc.yaml -f node-exporter-ds.yaml
+$ kubectl create -f kube/node-exporter-svc.yaml -f kube/node-exporter-ds.yaml
 # test that it works
 $ curl $(minikube ip):9100/metrics
 # compile program

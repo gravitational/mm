@@ -21,7 +21,7 @@ import (
 	"github.com/gravitational/mm/pkg/kubernetes"
 	"github.com/gravitational/mm/pkg/prometheus"
 	"github.com/gravitational/mm/pkg/util"
-	influx "github.com/influxdata/influxdb/client"
+	influx "github.com/influxdata/influxdb/client/v2"
 	watch "k8s.io/client-go/1.4/pkg/watch"
 )
 
@@ -102,7 +102,7 @@ func run(cfg constants.CommandLineFlags) error {
 		return trace.Wrap(err)
 	}
 
-	influxClient, err := influxdb.NewClient(influx.Config{URL: *u}, cfg.InfluxDBDatabaseName, "")
+	influxClient, err := influxdb.NewClient(influx.HTTPConfig{Addr: u.String()}, cfg.InfluxDBDatabaseName, "")
 	if err != nil {
 		return trace.Wrap(err, "can't create InfluxDB client")
 	}
@@ -141,7 +141,7 @@ func run(cfg constants.CommandLineFlags) error {
 			return trace.Wrap(err, "error reading metrics for %s", metricsURL)
 		}
 
-		_, err = influxClient.Send(metrics)
+		err = influxClient.Send(metrics)
 		if err != nil {
 			return trace.Wrap(err, "error sending metrics")
 		}
